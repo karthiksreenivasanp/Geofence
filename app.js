@@ -94,19 +94,17 @@ function captureAdminLocation() {
   const statusEl = document.getElementById('location-status');
   statusEl.classList.remove('hidden', 'success');
   statusEl.classList.add('loading');
-  statusEl.textContent = 'Acquiring GPS signal...';
+  statusEl.textContent = 'Acquiring GPS signal... Please wait.';
+  statusEl.style.background = '';
+  statusEl.style.borderColor = '';
+  statusEl.style.color = '';
 
   if (!navigator.geolocation) {
-    statusEl.classList.remove('loading');
-    statusEl.classList.add('error');
-    statusEl.textContent = 'Geolocation is not supported by your browser.';
-    statusEl.style.background = 'rgba(244,63,94,0.1)';
-    statusEl.style.borderColor = 'rgba(244,63,94,0.25)';
-    statusEl.style.color = '#f43f5e';
+    showLocationError(statusEl, 'Geolocation is not supported by your browser.');
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
+  getReliablePosition(
     (position) => {
       state.boundary.lat = position.coords.latitude;
       state.boundary.lng = position.coords.longitude;
@@ -125,32 +123,109 @@ function captureAdminLocation() {
       updateSummary();
       showToast('GPS coordinates captured!', 'success');
     },
-    (error) => {
-      statusEl.classList.remove('loading');
-      statusEl.style.background = 'rgba(244,63,94,0.1)';
-      statusEl.style.borderColor = 'rgba(244,63,94,0.25)';
-      statusEl.style.color = '#f43f5e';
-
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          statusEl.textContent = 'Location permission denied. Please allow location access in your browser settings.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          statusEl.textContent = 'Location information unavailable. Try again.';
-          break;
-        case error.TIMEOUT:
-          statusEl.textContent = 'Location request timed out. Try again.';
-          break;
-        default:
-          statusEl.textContent = 'An unknown error occurred.';
-      }
+    (errorMsg) => {
+      showLocationError(statusEl, errorMsg);
     },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
+    (progressMsg) => {
+      statusEl.textContent = progressMsg;
     }
   );
+}
+
+function showLocationError(statusEl, message) {
+  statusEl.classList.remove('loading');
+  statusEl.style.background = 'rgba(244,63,94,0.1)';
+  statusEl.style.borderColor = 'rgba(244,63,94,0.25)';
+  statusEl.style.color = '#f43f5e';
+  statusEl.textContent = message;
+}
+
+/**
+ * Reliable GPS acquisition using watchPosition with automatic fallback.
+ * Strategy:
+ *   1. Start watchPosition (streams positions as GPS warms up)
+ *   2. Accept the first position received
+ *   3. If high-accuracy times out, fallback to low-accuracy
+ *   4. Overall timeout of 45 seconds
+ */
+function getReliablePosition(onSuccess, onError, onProgress) {
+  let resolved = false;
+  let watchId = null;
+  let fallbackTimeout = null;
+  let overallTimeout = null;
+
+  function cleanup() {
+    resolved = true;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    if (fallbackTimeout) clearTimeout(fallbackTimeout);
+    if (overallTimeout) clearTimeout(overallTimeout);
+  }
+
+  function handlePosition(position) {
+    if (resolved) return;
+    cleanup();
+    onSuccess(position);
+  }
+
+  function handleError(error) {
+    // On timeout with high accuracy, try low accuracy fallback
+    if (!resolved && error.code === error.TIMEOUT) {
+      tryLowAccuracy();
+      return;
+    }
+    if (resolved) return;
+    cleanup();
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        onError('Location permission denied. Please allow location access in your browser/phone settings and reload.');
+        break;
+      case error.POSITION_UNAVAILABLE:
+        onError('Location unavailable. Make sure Location/GPS is ON in your phone settings, then try again.');
+        break;
+      default:
+        onError('Unable to get location. Please check GPS is ON, then try again.');
+    }
+  }
+
+  function tryLowAccuracy() {
+    if (resolved) return;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    if (onProgress) onProgress('High-accuracy timed out. Trying with network location...');
+
+    watchId = navigator.geolocation.watchPosition(
+      handlePosition,
+      (err) => {
+        if (resolved) return;
+        cleanup();
+        onError('Location unavailable. Please ensure GPS/Location is ON in your phone settings, allow browser permission, and try again.');
+      },
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
+    );
+  }
+
+  // Start with high accuracy via watchPosition (more reliable than getCurrentPosition)
+  if (onProgress) onProgress('Acquiring GPS signal... Please wait.');
+  watchId = navigator.geolocation.watchPosition(
+    handlePosition,
+    handleError,
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
+  );
+
+  // Fallback to low accuracy after 20s if still no position
+  fallbackTimeout = setTimeout(() => {
+    if (!resolved) {
+      if (onProgress) onProgress('GPS taking longer than usual. Trying alternative...');
+      tryLowAccuracy();
+    }
+  }, 20000);
+
+  // Hard overall timeout at 45s
+  overallTimeout = setTimeout(() => {
+    if (!resolved) {
+      cleanup();
+      onError('Could not get location after multiple attempts. Please check: 1) GPS/Location is ON in phone settings 2) Browser has location permission 3) You are not indoors with no signal. Then try again.');
+    }
+  }, 45000);
 }
 
 function setRadius(value) {
@@ -344,13 +419,13 @@ function verifyPresence() {
   btn.querySelector('span').textContent = 'Acquiring GPS...';
 
   if (!navigator.geolocation) {
-    showVerifyError('Geolocation is not supported by your device.');
+    showToast('Geolocation is not supported by your device.', 'error', 4000);
     btn.disabled = false;
     btn.querySelector('span').textContent = 'Verify Your Presence';
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(
+  getReliablePosition(
     (position) => {
       const userLat = position.coords.latitude;
       const userLng = position.coords.longitude;
@@ -370,29 +445,13 @@ function verifyPresence() {
       btn.disabled = false;
       btn.querySelector('span').textContent = 'Verify Your Presence';
     },
-    (error) => {
-      let msg = 'Unable to determine your location. ';
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          msg += 'Please allow location access in your browser settings.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          msg += 'Location information unavailable.';
-          break;
-        case error.TIMEOUT:
-          msg += 'Request timed out. Please try again.';
-          break;
-        default:
-          msg += 'An unknown error occurred.';
-      }
-      showToast(msg, 'error', 4000);
+    (errorMsg) => {
+      showToast(errorMsg, 'error', 5000);
       btn.disabled = false;
       btn.querySelector('span').textContent = 'Verify Your Presence';
     },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
+    (progressMsg) => {
+      btn.querySelector('span').textContent = progressMsg;
     }
   );
 }
