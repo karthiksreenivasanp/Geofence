@@ -259,7 +259,7 @@ function updateRadiusFromSlider(value) {
   setRadius(value);
 }
 
-function toggleLock() {
+async function toggleLock() {
   const errorEl = document.getElementById('lock-error');
   errorEl.classList.add('hidden');
 
@@ -280,11 +280,21 @@ function toggleLock() {
     }
     state.boundary.passcode = passcode;
     state.boundary.locked = true;
-    saveBoundaryToStorage();
-    showToast('Boundary locked and active!', 'success');
+    
+    // Disable button while saving
+    const btnLockText = document.getElementById('btn-lock-text');
+    const originalText = btnLockText.textContent;
+    btnLockText.textContent = 'Saving to cloud...';
+    
+    await saveBoundaryToStorage();
+    showToast('Boundary locked and synced to cloud!', 'success');
   } else {
     state.boundary.locked = false;
-    saveBoundaryToStorage();
+    
+    const btnLockText = document.getElementById('btn-lock-text');
+    btnLockText.textContent = 'Unlocking...';
+    
+    await saveBoundaryToStorage();
     showToast('Boundary unlocked for editing', 'warning');
   }
   updateLockUI();
@@ -358,24 +368,34 @@ function updateAdminUI() {
   updateSummary();
 }
 
-// ─── Local Storage Persistence ───────────────────────────
-function saveBoundaryToStorage() {
+// ─── Cloud Storage Persistence (Firebase REST API) ────────
+const FIREBASE_DB_URL = 'https://geofence-app-c20e5-default-rtdb.firebaseio.com/boundary.json';
+
+async function saveBoundaryToStorage() {
   try {
-    localStorage.setItem('geofence_boundary', JSON.stringify(state.boundary));
+    const response = await fetch(FIREBASE_DB_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.boundary)
+    });
+    if (!response.ok) throw new Error('Network response was not ok');
   } catch (e) {
-    // Storage not available
+    console.error('Failed to save to Firebase:', e);
+    showToast('Failed to sync boundary to cloud. Check internet connection.', 'error');
   }
 }
 
-function loadBoundaryFromStorage() {
+async function loadBoundaryFromStorage() {
   try {
-    const saved = localStorage.getItem('geofence_boundary');
-    if (saved) {
-      const data = JSON.parse(saved);
-      state.boundary = { ...state.boundary, ...data };
+    const response = await fetch(FIREBASE_DB_URL);
+    if (response.ok) {
+      const data = await response.json();
+      if (data) {
+        state.boundary = { ...state.boundary, ...data };
+      }
     }
   } catch (e) {
-    // Storage not available
+    console.error('Failed to load from Firebase:', e);
   }
 }
 
@@ -383,13 +403,22 @@ function loadBoundaryFromStorage() {
 // USER LOGIC
 // ═══════════════════════════════════════════════════════════
 
-function handleUserLogin(e) {
+async function handleUserLogin(e) {
   e.preventDefault();
   const passcode = document.getElementById('user-passcode').value.trim();
   const errorEl = document.getElementById('user-login-error');
+  const btn = document.getElementById('user-login-btn');
+  const btnText = btn.querySelector('span');
 
-  // Load boundary from storage
-  loadBoundaryFromStorage();
+  btn.disabled = true;
+  const originalText = btnText.textContent;
+  btnText.textContent = 'Checking cloud...';
+
+  // Load boundary from Firebase
+  await loadBoundaryFromStorage();
+
+  btn.disabled = false;
+  btnText.textContent = originalText;
 
   if (!state.boundary.locked) {
     errorEl.textContent = 'No active boundary found. The admin has not locked a boundary yet.';
@@ -509,7 +538,7 @@ function showVerifyResult(isInside, distance, accuracy, userLat, userLng) {
 }
 
 // ─── Init ────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  loadBoundaryFromStorage();
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadBoundaryFromStorage();
   showScreen('splash-screen');
 });
