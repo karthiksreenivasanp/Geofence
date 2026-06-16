@@ -211,13 +211,20 @@ function getReliablePosition(onSuccess, onError, onProgress) {
     { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
   );
 
-  // Fallback to low accuracy after 20s if still no position
+  // Fallback to low accuracy after 15s if still no position
   fallbackTimeout = setTimeout(() => {
     if (!resolved) {
       if (onProgress) onProgress('GPS taking longer than usual. Trying alternative...');
       tryLowAccuracy();
+      
+      // Also try a direct getCurrentPosition as a last resort
+      navigator.geolocation.getCurrentPosition(
+        handlePosition,
+        () => {},
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+      );
     }
-  }, 20000);
+  }, 15000);
 
   // Hard overall timeout at 45s
   overallTimeout = setTimeout(() => {
