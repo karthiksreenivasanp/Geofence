@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="GeoFence — Verify your presence within a virtual GPS boundary using Haversine distance calculation. Set custom radius boundaries and verify user locations in real-time." />
+  <meta name="theme-color" content="#0f0f23" />
+  <title>GeoFence — Virtual Boundary Verification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SPLASH / ROLE SELECTION                            -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="splash-screen" class="screen active">
+    <div class="splash-bg-orbs">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+    <div class="splash-content">
+      <div class="logo-ring">
+        <svg class="logo-svg" viewBox="0 0 120 120" fill="none">
+          <circle cx="60" cy="60" r="54" stroke="url(#logoGrad)" stroke-width="3" stroke-dasharray="8 4" />
+          <circle cx="60" cy="60" r="38" stroke="url(#logoGrad2)" stroke-width="2" opacity="0.5" />
+          <circle cx="60" cy="60" r="8" fill="url(#logoGrad)" />
+          <defs>
+            <linearGradient id="logoGrad" x1="0" y1="0" x2="120" y2="120">
+              <stop stop-color="#6366f1" />
+              <stop offset="1" stop-color="#06b6d4" />
+            </linearGradient>
+            <linearGradient id="logoGrad2" x1="120" y1="0" x2="0" y2="120">
+              <stop stop-color="#8b5cf6" />
+              <stop offset="1" stop-color="#22d3ee" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1 class="splash-title">Geo<span class="accent">Fence</span></h1>
+      <p class="splash-subtitle">Virtual Boundary Verification System</p>
+      <div class="role-cards">
+        <button id="btn-admin-role" class="role-card" onclick="showScreen('admin-login-screen')">
+          <div class="role-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+          </div>
+          <h3>Admin</h3>
+          <p>Set boundary &amp; radius</p>
+        </button>
+        <button id="btn-user-role" class="role-card" onclick="showScreen('user-login-screen')">
+          <div class="role-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+          </div>
+          <h3>User</h3>
+          <p>Verify your presence</p>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- ADMIN LOGIN                                        -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="admin-login-screen" class="screen">
+    <button class="back-btn" onclick="showScreen('splash-screen')" aria-label="Go back">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <div class="auth-card">
+      <div class="auth-badge admin-badge">ADMIN</div>
+      <h2>Admin Access</h2>
+      <p class="auth-desc">Enter admin credentials to configure the virtual boundary.</p>
+      <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+        <div class="input-group">
+          <label for="admin-password">Admin Password</label>
+          <input type="password" id="admin-password" placeholder="Enter admin password" required autocomplete="off" />
+        </div>
+        <button type="submit" class="btn-primary" id="admin-login-btn">
+          <span>Authenticate</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </form>
+      <div id="admin-login-error" class="error-msg hidden"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- ADMIN DASHBOARD                                    -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="admin-dashboard" class="screen">
+    <header class="dash-header">
+      <div class="dash-header-left">
+        <div class="dash-logo-sm">
+          <svg width="28" height="28" viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="54" stroke="url(#logoGrad)" stroke-width="3" stroke-dasharray="8 4"/>
+            <circle cx="60" cy="60" r="8" fill="url(#logoGrad)"/>
+          </svg>
+        </div>
+        <span class="dash-title">Admin Panel</span>
+      </div>
+      <button class="btn-ghost" id="admin-logout-btn" onclick="adminLogout()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Logout
+      </button>
+    </header>
+
+    <main class="dash-main">
+      <!-- Step 1: Set Location -->
+      <section class="config-section" id="section-location">
+        <div class="section-header">
+          <div class="step-badge">1</div>
+          <div>
+            <h3>Set Boundary Center</h3>
+            <p>Use your device GPS to capture the center point of the virtual boundary.</p>
+          </div>
+        </div>
+        <div class="coord-display" id="admin-coord-display">
+          <div class="coord-item">
+            <span class="coord-label">Latitude</span>
+            <span class="coord-value" id="admin-lat">—</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">Longitude</span>
+            <span class="coord-value" id="admin-lng">—</span>
+          </div>
+          <div class="coord-item">
+            <span class="coord-label">Accuracy</span>
+            <span class="coord-value" id="admin-acc">—</span>
+          </div>
+        </div>
+        <button class="btn-primary btn-wide" id="btn-capture-location" onclick="captureAdminLocation()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          <span>Capture My Location</span>
+        </button>
+        <div id="location-status" class="status-msg hidden"></div>
+      </section>
+
+      <!-- Step 2: Set Radius -->
+      <section class="config-section" id="section-radius">
+        <div class="section-header">
+          <div class="step-badge">2</div>
+          <div>
+            <h3>Set Boundary Radius</h3>
+            <p>Choose the radius of the virtual boundary in meters.</p>
+          </div>
+        </div>
+        <div class="radius-control">
+          <div class="radius-presets">
+            <button class="preset-btn" onclick="setRadius(5)">5 m</button>
+            <button class="preset-btn" onclick="setRadius(10)">10 m</button>
+            <button class="preset-btn active" onclick="setRadius(15)">15 m</button>
+            <button class="preset-btn" onclick="setRadius(25)">25 m</button>
+            <button class="preset-btn" onclick="setRadius(50)">50 m</button>
+            <button class="preset-btn" onclick="setRadius(100)">100 m</button>
+          </div>
+          <div class="radius-slider-group">
+            <input type="range" id="radius-slider" min="1" max="500" value="15" oninput="updateRadiusFromSlider(this.value)" />
+            <div class="radius-display">
+              <input type="number" id="radius-input" min="1" max="5000" value="15" onchange="setRadius(this.value)" />
+              <span class="radius-unit">meters</span>
+            </div>
+          </div>
+          <div class="radius-visual">
+            <div class="radius-circle" id="radius-circle">
+              <span id="radius-circle-label">15 m</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 3: Set Passcode -->
+      <section class="config-section" id="section-passcode">
+        <div class="section-header">
+          <div class="step-badge">3</div>
+          <div>
+            <h3>Set User Passcode</h3>
+            <p>Create a passcode that general users will use to access the verification system.</p>
+          </div>
+        </div>
+        <div class="input-group">
+          <label for="user-passcode-set">User Passcode</label>
+          <input type="text" id="user-passcode-set" placeholder="e.g. GEO2026" maxlength="20" autocomplete="off" />
+        </div>
+      </section>
+
+      <!-- Step 4: Lock -->
+      <section class="config-section" id="section-lock">
+        <div class="section-header">
+          <div class="step-badge">4</div>
+          <div>
+            <h3>Lock Boundary</h3>
+            <p>Once locked, general users can start verifying their presence.</p>
+          </div>
+        </div>
+        <div id="lock-status" class="lock-status unlocked">
+          <svg class="lock-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path id="lock-shackle" d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+          <span id="lock-text">Boundary is <strong>Unlocked</strong></span>
+        </div>
+        <button class="btn-primary btn-wide btn-lock" id="btn-lock" onclick="toggleLock()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          <span id="btn-lock-text">Lock Boundary</span>
+        </button>
+        <div id="lock-error" class="error-msg hidden"></div>
+      </section>
+
+      <!-- Live Summary -->
+      <section class="config-section summary-section" id="section-summary">
+        <h3>Boundary Summary</h3>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">Center</span>
+            <span class="summary-value" id="summary-center">Not set</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Radius</span>
+            <span class="summary-value" id="summary-radius">15 m</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Passcode</span>
+            <span class="summary-value" id="summary-passcode">Not set</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Status</span>
+            <span class="summary-value status-unlocked" id="summary-status">Unlocked</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- USER LOGIN                                         -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="user-login-screen" class="screen">
+    <button class="back-btn" onclick="showScreen('splash-screen')" aria-label="Go back">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <div class="auth-card">
+      <div class="auth-badge user-badge">USER</div>
+      <h2>User Verification</h2>
+      <p class="auth-desc">Enter the passcode provided by your administrator.</p>
+      <form id="user-login-form" onsubmit="handleUserLogin(event)">
+        <div class="input-group">
+          <label for="user-passcode">Passcode</label>
+          <input type="text" id="user-passcode" placeholder="Enter passcode" required autocomplete="off" />
+        </div>
+        <button type="submit" class="btn-primary" id="user-login-btn">
+          <span>Enter</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </form>
+      <div id="user-login-error" class="error-msg hidden"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- USER VERIFICATION                                  -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="user-verify-screen" class="screen">
+    <header class="dash-header">
+      <div class="dash-header-left">
+        <div class="dash-logo-sm">
+          <svg width="28" height="28" viewBox="0 0 120 120" fill="none">
+            <circle cx="60" cy="60" r="54" stroke="url(#logoGrad)" stroke-width="3" stroke-dasharray="8 4"/>
+            <circle cx="60" cy="60" r="8" fill="url(#logoGrad)"/>
+          </svg>
+        </div>
+        <span class="dash-title">Presence Verification</span>
+      </div>
+      <button class="btn-ghost" id="user-logout-btn" onclick="userLogout()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Exit
+      </button>
+    </header>
+
+    <main class="verify-main">
+      <div class="verify-card">
+        <div class="verify-radar" id="verify-radar">
+          <div class="radar-ring ring-1"></div>
+          <div class="radar-ring ring-2"></div>
+          <div class="radar-ring ring-3"></div>
+          <div class="radar-sweep"></div>
+          <div class="radar-dot" id="radar-dot"></div>
+        </div>
+
+        <div class="verify-info">
+          <p class="verify-boundary-info">Boundary radius: <strong id="verify-radius-display">—</strong></p>
+        </div>
+
+        <button class="btn-verify" id="btn-verify" onclick="verifyPresence()">
+          <div class="btn-verify-inner">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a10 10 0 110 20 10 10 0 010-20z"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            <span>Verify Your Presence</span>
+          </div>
+        </button>
+
+        <!-- Result Panel -->
+        <div id="verify-result" class="verify-result hidden">
+          <div class="result-icon" id="result-icon"></div>
+          <h3 id="result-title"></h3>
+          <p id="result-message"></p>
+          <div class="result-details" id="result-details"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- TOAST CONTAINER                                    -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
