@@ -368,34 +368,51 @@ function updateAdminUI() {
   updateSummary();
 }
 
-// ─── Cloud Storage Persistence (Firebase REST API) ────────
-const FIREBASE_DB_URL = 'https://geofence-app-c20e5-default-rtdb.firebaseio.com/boundary.json';
+// ─── Cloud Storage Persistence (Firestore REST API) ────────
+const FIRESTORE_URL = 'https://firestore.googleapis.com/v1/projects/geofence-app-c20e5/databases/(default)/documents/geofence/boundary';
 
 async function saveBoundaryToStorage() {
   try {
-    const response = await fetch(FIREBASE_DB_URL, {
-      method: 'PUT',
+    const payload = {
+      fields: {
+        lat: { doubleValue: state.boundary.lat || 0 },
+        lng: { doubleValue: state.boundary.lng || 0 },
+        radius: { integerValue: state.boundary.radius || 15 },
+        passcode: { stringValue: state.boundary.passcode || "" },
+        locked: { booleanValue: !!state.boundary.locked }
+      }
+    };
+
+    // Use PATCH to create or update the document
+    const response = await fetch(FIRESTORE_URL, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state.boundary)
+      body: JSON.stringify(payload)
     });
     if (!response.ok) throw new Error('Network response was not ok');
   } catch (e) {
-    console.error('Failed to save to Firebase:', e);
+    console.error('Failed to save to Firestore:', e);
     showToast('Failed to sync boundary to cloud. Check internet connection.', 'error');
   }
 }
 
 async function loadBoundaryFromStorage() {
   try {
-    const response = await fetch(FIREBASE_DB_URL);
+    const response = await fetch(FIRESTORE_URL);
     if (response.ok) {
       const data = await response.json();
-      if (data) {
-        state.boundary = { ...state.boundary, ...data };
+      if (data && data.fields) {
+        const getNum = (f) => f ? Number(f.doubleValue ?? f.integerValue ?? 0) : null;
+        
+        state.boundary.lat = getNum(data.fields.lat);
+        state.boundary.lng = getNum(data.fields.lng);
+        state.boundary.radius = getNum(data.fields.radius) || 15;
+        state.boundary.passcode = data.fields.passcode?.stringValue || '';
+        state.boundary.locked = data.fields.locked?.booleanValue || false;
       }
     }
   } catch (e) {
-    console.error('Failed to load from Firebase:', e);
+    console.error('Failed to load from Firestore:', e);
   }
 }
 
