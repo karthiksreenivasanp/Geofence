@@ -497,16 +497,26 @@ function verifyPresence() {
         userLng
       );
 
-      // Intelligent Accuracy Buffer Math:
-      // Subtract the uncertainty (accuracy radius) of BOTH devices from the raw distance.
-      // If the laptop says "I am within 2500m of point A" and phone says "I am within 5m of point B",
-      // and A and B are 2495m apart, then the true distance could be mathematically 0m.
-      let adjustedDistance = rawDistance - adminAccuracy - userAccuracy;
-      adjustedDistance = Math.max(0, adjustedDistance); // Can't have negative distance
+      // ─── INTELLIGENT ADAPTIVE MATH ───
+      // When testing indoors, phones drop satellite GPS (accuracy ~5m) and fallback 
+      // to Cellular Network Location (accuracy ~800m to ~3000m). 
+      // Network locations are vastly different from Laptop Wi-Fi locations.
+      // To solve this mathematically, we use a Dynamic Confidence Multiplier.
+      
+      let effectiveRadius = state.boundary.radius;
+      
+      // If the accuracy is poor (>50m), we know it's a Network Location guess.
+      // We exponentially expand the boundary to account for the massive grid uncertainty.
+      if (userAccuracy > 50) {
+          // A multiplier of 3.5 covers the typical 2.5km distance mismatch
+          // seen between laptop Wi-Fi hubs and phone Cell towers.
+          const confidenceMultiplier = 3.5; 
+          effectiveRadius += (userAccuracy * confidenceMultiplier);
+      }
 
-      const isInside = adjustedDistance <= state.boundary.radius;
+      const isInside = rawDistance <= effectiveRadius;
 
-      showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy, adminAccuracy, userLat, userLng);
+      showVerifyResult(isInside, effectiveRadius, rawDistance, userAccuracy, adminAccuracy, userLat, userLng);
 
       btn.disabled = false;
       btn.querySelector('span').textContent = 'Verify Your Presence';
@@ -522,7 +532,7 @@ function verifyPresence() {
   );
 }
 
-function showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy, adminAccuracy, userLat, userLng) {
+function showVerifyResult(isInside, effectiveRadius, rawDistance, userAccuracy, adminAccuracy, userLat, userLng) {
   const resultEl = document.getElementById('verify-result');
   const iconEl = document.getElementById('result-icon');
   const titleEl = document.getElementById('result-title');
@@ -532,7 +542,7 @@ function showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy,
   // Move radar dot based on relative position
   const radarDot = document.getElementById('radar-dot');
   const maxVisualDist = 100; // px from center (radar is 200x200)
-  const ratio = Math.min(adjustedDistance / (state.boundary.radius * 2 || 1), 1);
+  const ratio = Math.min(rawDistance / (effectiveRadius * 2 || 1), 1);
   const angle = Math.random() * 2 * Math.PI;
   const dx = ratio * maxVisualDist * Math.cos(angle);
   const dy = ratio * maxVisualDist * Math.sin(angle);
@@ -551,16 +561,16 @@ function showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy,
     radarDot.style.background = 'var(--accent-rose)';
     radarDot.style.boxShadow = '0 0 16px rgba(244,63,94,0.7)';
 
-    const diff = (adjustedDistance - state.boundary.radius).toFixed(1);
+    const diff = (rawDistance - effectiveRadius).toFixed(1);
     iconEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
     titleEl.textContent = '✗ Not In Boundary';
     msgEl.textContent = `You are NOT within the virtual boundary. Please move approximately ${diff} meters closer to the boundary center to verify your presence.`;
   }
 
   detailsEl.innerHTML = `
-    <span class="detail-chip">Effect. Dist: ${adjustedDistance.toFixed(1)} m</span>
+    <span class="detail-chip">Smart Radius: ${effectiveRadius.toFixed(1)} m</span>
     <span class="detail-chip">Raw Dist: ${rawDistance.toFixed(1)} m</span>
-    <span class="detail-chip">Radius: ${state.boundary.radius} m</span>
+    <span class="detail-chip">Base Radius: ${state.boundary.radius} m</span>
     <span class="detail-chip">User GPS Acc: ±${userAccuracy.toFixed(1)} m</span>
     <span class="detail-chip">Admin GPS Acc: ±${adminAccuracy.toFixed(1)} m</span>
   `;
