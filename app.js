@@ -10,6 +10,7 @@ const state = {
   boundary: {
     lat: null,
     lng: null,
+    accuracy: 0,
     radius: 15,       // meters
     passcode: '',
     locked: false,
@@ -108,10 +109,11 @@ function captureAdminLocation() {
     (position) => {
       state.boundary.lat = position.coords.latitude;
       state.boundary.lng = position.coords.longitude;
+      state.boundary.accuracy = position.coords.accuracy || 0;
 
       document.getElementById('admin-lat').textContent = position.coords.latitude.toFixed(7);
       document.getElementById('admin-lng').textContent = position.coords.longitude.toFixed(7);
-      document.getElementById('admin-acc').textContent = (position.coords.accuracy || 0).toFixed(1) + ' m';
+      document.getElementById('admin-acc').textContent = state.boundary.accuracy.toFixed(1) + ' m';
 
       statusEl.classList.remove('loading');
       statusEl.classList.add('success');
@@ -377,6 +379,7 @@ async function saveBoundaryToStorage() {
       fields: {
         lat: { doubleValue: state.boundary.lat || 0 },
         lng: { doubleValue: state.boundary.lng || 0 },
+        accuracy: { doubleValue: state.boundary.accuracy || 0 },
         radius: { integerValue: state.boundary.radius || 15 },
         passcode: { stringValue: state.boundary.passcode || "" },
         locked: { booleanValue: !!state.boundary.locked }
@@ -406,6 +409,7 @@ async function loadBoundaryFromStorage() {
         
         state.boundary.lat = getNum(data.fields.lat);
         state.boundary.lng = getNum(data.fields.lng);
+        state.boundary.accuracy = getNum(data.fields.accuracy) || 0;
         state.boundary.radius = getNum(data.fields.radius) || 15;
         state.boundary.passcode = data.fields.passcode?.stringValue || '';
         state.boundary.locked = data.fields.locked?.booleanValue || false;
@@ -482,18 +486,27 @@ function verifyPresence() {
     (position) => {
       const userLat = position.coords.latitude;
       const userLng = position.coords.longitude;
-      const accuracy = position.coords.accuracy;
+      const userAccuracy = position.coords.accuracy || 0;
+      const adminAccuracy = state.boundary.accuracy || 0;
 
-      const distance = haversineDistance(
+      // Raw distance between the two coordinates
+      const rawDistance = haversineDistance(
         state.boundary.lat,
         state.boundary.lng,
         userLat,
         userLng
       );
 
-      const isInside = distance <= state.boundary.radius;
+      // Intelligent Accuracy Buffer Math:
+      // Subtract the uncertainty (accuracy radius) of BOTH devices from the raw distance.
+      // If the laptop says "I am within 2500m of point A" and phone says "I am within 5m of point B",
+      // and A and B are 2495m apart, then the true distance could be mathematically 0m.
+      let adjustedDistance = rawDistance - adminAccuracy - userAccuracy;
+      adjustedDistance = Math.max(0, adjustedDistance); // Can't have negative distance
 
-      showVerifyResult(isInside, distance, accuracy, userLat, userLng);
+      const isInside = adjustedDistance <= state.boundary.radius;
+
+      showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy, adminAccuracy, userLat, userLng);
 
       btn.disabled = false;
       btn.querySelector('span').textContent = 'Verify Your Presence';
@@ -509,7 +522,7 @@ function verifyPresence() {
   );
 }
 
-function showVerifyResult(isInside, distance, accuracy, userLat, userLng) {
+function showVerifyResult(isInside, adjustedDistance, rawDistance, userAccuracy, adminAccuracy, userLat, userLng) {
   const resultEl = document.getElementById('verify-result');
   const iconEl = document.getElementById('result-icon');
   const titleEl = document.getElementById('result-title');
@@ -519,7 +532,7 @@ function showVerifyResult(isInside, distance, accuracy, userLat, userLng) {
   // Move radar dot based on relative position
   const radarDot = document.getElementById('radar-dot');
   const maxVisualDist = 100; // px from center (radar is 200x200)
-  const ratio = Math.min(distance / (state.boundary.radius * 2), 1);
+  const ratio = Math.min(adjustedDistance / (state.boundary.radius * 2 || 1), 1);
   const angle = Math.random() * 2 * Math.PI;
   const dx = ratio * maxVisualDist * Math.cos(angle);
   const dy = ratio * maxVisualDist * Math.sin(angle);
@@ -538,17 +551,18 @@ function showVerifyResult(isInside, distance, accuracy, userLat, userLng) {
     radarDot.style.background = 'var(--accent-rose)';
     radarDot.style.boxShadow = '0 0 16px rgba(244,63,94,0.7)';
 
-    const diff = (distance - state.boundary.radius).toFixed(1);
+    const diff = (adjustedDistance - state.boundary.radius).toFixed(1);
     iconEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
     titleEl.textContent = '✗ Not In Boundary';
     msgEl.textContent = `You are NOT within the virtual boundary. Please move approximately ${diff} meters closer to the boundary center to verify your presence.`;
   }
 
   detailsEl.innerHTML = `
-    <span class="detail-chip">Distance: ${distance.toFixed(1)} m</span>
+    <span class="detail-chip">Effect. Dist: ${adjustedDistance.toFixed(1)} m</span>
+    <span class="detail-chip">Raw Dist: ${rawDistance.toFixed(1)} m</span>
     <span class="detail-chip">Radius: ${state.boundary.radius} m</span>
-    <span class="detail-chip">GPS Accuracy: ±${(accuracy || 0).toFixed(1)} m</span>
-    <span class="detail-chip">Your GPS: ${userLat.toFixed(5)}, ${userLng.toFixed(5)}</span>
+    <span class="detail-chip">User GPS Acc: ±${userAccuracy.toFixed(1)} m</span>
+    <span class="detail-chip">Admin GPS Acc: ±${adminAccuracy.toFixed(1)} m</span>
   `;
 
   resultEl.classList.remove('hidden');
