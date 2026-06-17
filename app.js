@@ -582,4 +582,67 @@ function showVerifyResult(isInside, effectiveRadius, rawDistance, userAccuracy, 
 document.addEventListener('DOMContentLoaded', async () => {
   await loadBoundaryFromStorage();
   showScreen('splash-screen');
+
+  // Experiment Logger Logic
+  const btnLogExp = document.getElementById('btn-log-exp');
+  if (btnLogExp) {
+    btnLogExp.addEventListener('click', async () => {
+      const distInput = document.getElementById('exp-actual-dist').value;
+      if (!distInput) return showToast('Please enter your actual distance from the laptop.', 'error');
+      
+      const actualDist = Number(distInput);
+      const span = btnLogExp.querySelector('span');
+      const originalText = span.textContent;
+      span.textContent = 'Capturing GPS...';
+      btnLogExp.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const rawDist = haversineDistance(
+          state.boundary.lat, 
+          state.boundary.lng, 
+          pos.coords.latitude, 
+          pos.coords.longitude
+        );
+
+        const payload = {
+          fields: {
+            timestamp: { stringValue: new Date().toISOString() },
+            actual_distance_m: { integerValue: actualDist },
+            calculated_raw_distance_m: { doubleValue: rawDist },
+            admin_lat: { doubleValue: state.boundary.lat || 0 },
+            admin_lng: { doubleValue: state.boundary.lng || 0 },
+            admin_accuracy: { doubleValue: state.boundary.accuracy || 0 },
+            user_lat: { doubleValue: pos.coords.latitude },
+            user_lng: { doubleValue: pos.coords.longitude },
+            user_accuracy: { doubleValue: pos.coords.accuracy || 0 }
+          }
+        };
+
+        try {
+          // Post to a new 'experiments' collection
+          const EXP_URL = 'https://firestore.googleapis.com/v1/projects/geofence-app-c20e5/databases/(default)/documents/experiments';
+          const res = await fetch(EXP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!res.ok) throw new Error('Failed to save experiment');
+          
+          showToast('Data logged! Thank you.', 'success');
+          document.getElementById('exp-actual-dist').value = '';
+        } catch(e) {
+          console.error(e);
+          showToast('Failed to log data to Firebase.', 'error');
+        } finally {
+          span.textContent = originalText;
+          btnLogExp.disabled = false;
+        }
+      }, (err) => {
+        showToast('Failed to get GPS location.', 'error');
+        span.textContent = originalText;
+        btnLogExp.disabled = false;
+      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
+  }
 });
